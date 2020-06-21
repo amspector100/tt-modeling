@@ -97,6 +97,5 @@ class TestAR1HMM(unittest.TestCase):
 			f"M step fails to increase likelihood: initial likelihood is {init_ll}, ending is {qloss}"
 		)
 
-
 if __name__ == '__main__':
 	unittest.main()
