@@ -94,19 +94,16 @@ def sample_hmm(node_potentials, edge_potentials, bkw_messages):
         node_potentials[e][config[e]] = 1
     return config
 
-def sample_conditional(df, bins, ro, mu, sigma, n_sample=1, verbose=False):
+def sample_conditional(df, bins, mu, sigma, rhos, n_sample=1, verbose=False):
     node_potentials = generate_node_potentials(df, bins)
-    edge_potentials = np.repeat(
-        generate_transition_matrix(bins, ro, mu, sigma).reshape((1,bins.shape[0],bins.shape[0])),
-        len(df)-1, axis=0
-    )
+    ordered_rhos = rhos[df['point_type']][1:]
+    edge_potentials = np.array([
+        generate_transition_matrix(
+            bins, rho, mu, sigma
+        ).reshape((1,bins.shape[0],bins.shape[0])) for rho in ordered_rhos
+    ])
     sample = []
     loop = trange(n_sample) if verbose else range(n_sample)
     for i in loop:
         sample.append(bins[hmm_sampler(node_potentials, edge_potentials)])
     return np.array(sample) if n_sample > 1 else sample[0]
-
-if __name__ == '__main__':
-    df = process_data()
-    sample = sample_conditional(df.head(50), np.round(np.arange(-2.5,2.6,.1), 3), 0.5, 0, 1, n_sample=5, verbose=True)
-    print(sample.shape)
