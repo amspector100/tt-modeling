@@ -5,6 +5,8 @@ import torch
 import torch.nn as nn
 import torch.distributions as ds
 
+from . import sampler 
+
 def Check_Shapes(y, transition_type):
 	p = y.shape[0]
 	p_trans = transition_type.shape[0]
@@ -12,7 +14,6 @@ def Check_Shapes(y, transition_type):
 		raise ValueError(
 			f"Transition types dim 0 {p_trans} should be one less than emission dim 0 {p}"
 		)
-
 
 
 def AR1_log_likelihood(
@@ -56,8 +57,8 @@ def AR1_log_likelihood(
 	# Transition likelihoods based on AR1 likelihood
 	ordered_rhos = rhos[transition_types]
 	ordered_conjugates = np.sqrt(1 - np.power(ordered_rhos, 2))
-	differences = X[1:] - ordered_conjugates * X[:-1]
-	l_transition = np.log(norm_pdf((differences / ordered_rhos))).sum()
+	differences = X[1:] - ordered_rhos * X[:-1]
+	l_transition = np.log(norm_pdf((differences / ordered_conjugates))).sum()
 
 	return l_emission + l_init + l_transition
 
@@ -121,8 +122,8 @@ class TorchLogLikelihood(torch.nn.Module):
 		rhos = torch.sigmoid(self.rho_logit)
 		ordered_rhos = rhos[torch.tensor(self.transition_types).long()]
 		ordered_conjugates = torch.sqrt(1 - ordered_rhos**2)
-		differences = X[:, 1:] - ordered_conjugates * X[:, :-1]
-		l_transition = norm_rv.log_prob(differences / ordered_rhos).sum(dim=1)
+		differences = X[:, 1:] - ordered_rhos * X[:, :-1]
+		l_transition = norm_rv.log_prob(differences / ordered_conjugates).sum(dim=1)
 
 		return l_emission + l_init + l_transition
 
@@ -130,9 +131,9 @@ class EMOptimizer():
 
 	def __init__(
 		self,
-		y,
-		transition_types,
 		df=None,
+		y=None,
+		transition_types=None,
 		**kwargs
 	):
 		"""
@@ -141,6 +142,11 @@ class EMOptimizer():
 		types. Its unique values should be k successive integers,
 		zero-indexed.
 		"""
+
+		if df is not None:
+			y = df['point'].values
+			print(y)
+			transition_types = df['point_type'][1:].astype(int).values
 
 		# Check transition type shape
 		Check_Shapes(y, transition_types)
@@ -181,7 +187,7 @@ class EMOptimizer():
 		mu, sigma, rhos = self.get_params()
 		return None
 
-	def M_step(self, X, num_iter=50, mstep=0):
+	def M_step(self, X, num_iter=50, mstep=0, verbose=True):
 		"""
 		:param X: n x p array of hidden states
 		(n = number of samples, p = length of chain)
@@ -198,7 +204,7 @@ class EMOptimizer():
 			self.opt.step()
 
 			# Step 3: Log output
-			if j % 5 == 0:
+			if j % 5 == 0 and verbose:
 				print(f"At M step {mstep}, iter {j}, qloss is {-1*qloss.item()}")
 
 		return -1*qloss

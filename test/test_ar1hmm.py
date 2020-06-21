@@ -97,5 +97,12 @@ class TestAR1HMM(unittest.TestCase):
 			f"M step fails to increase likelihood: initial likelihood is {init_ll}, ending is {qloss}"
 		)
 
+	def test_real_data(self):
+
+		df = modeling.processing.process_data()
+		emopt = ar1hmm.EMOptimizer(df=df)
+		print(emopt)
+		raise ValueError()
+
 if __name__ == '__main__':
 	unittest.main()
