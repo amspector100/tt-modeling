@@ -4,8 +4,8 @@ import random, sys
 from functools import reduce
 from operator import mul
 
-from util import *
-from processing import *
+from .util import *
+from .processing import *
 
 # This may not scale to lots more points but is working for now
 sys.setrecursionlimit(10000)
