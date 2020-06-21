@@ -1,14 +1,14 @@
 import pandas as pd
 import numpy as np
-from scipy import stats
 
 def generate_transition_matrix(bins, ro, mu, sigma):
     mat = np.zeros((len(bins),)*2)
-    n = stats.norm(loc=mu, scale=sigma*ro)
     ro_fact = np.sqrt(1-ro**2)
+    new_sig_sq = (sigma*ro)**2
     for i, b1 in enumerate(bins):
         for j, b2 in enumerate(bins):
-            mat[i,j] = n.pdf(b2 - ro_fact*b1)
+            diff = b2 - ro_fact*b1 - mu
+            mat[i,j] = np.exp(-(diff**2/(2*new_sig_sq)))
     return mat / mat.sum()
 
 def generate_node_potentials(df, bins):
