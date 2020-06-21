@@ -1,6 +1,9 @@
-import torch
 import numpy as np
 from scipy import stats
+
+import torch
+import torch.nn as nn
+import torch.distributions as ds
 
 def Check_Shapes(y, transition_type):
 	p = y.shape[0]
@@ -58,7 +61,7 @@ def AR1_log_likelihood(
 
 	return l_emission + l_init + l_transition
 
-class EM_Optimizer():
+class EMOptimizer(torch.nn.Module):
 
 	def __init__(
 		self,
@@ -71,11 +74,61 @@ class EM_Optimizer():
 		types. Its unique values should be k successive integers,
 		zero-indexed.
 		"""
+		super().__init__()
 
 		# Check transition type shape
 		Check_Shapes(y, transition_types)
 	
-		# Save
+		# Save observed data
 		self.p = y.shape[0]
 		self.y = y
 		self.transition_types = transition_types
+
+
+		# Initialize parameters
+		self.mu = torch.nn.Parameter(torch.tensor(0).float())
+		self.sigma = torch.nn.Parameter(torch.tensor(1).float())
+		num_rhos = np.unique(self.transition_types).shape[0]
+
+		# Because we constrain rhos in [0,1], 
+		# we store log(rho) as a the variable we optimize
+		self.rho_logit = torch.nn.Parameter(torch.randn(num_rhos))
+
+		# Will be n x p dimensional array of samples from hidden state
+		# This will be helpful for EM algorithm
+		self.X = None 
+
+	def get_params(self):
+		""" Returns parameters, convenience function """
+		rhos = torch.sigmoid(self.rho_logit)
+		return self.mu, self.sigma, rhos
+
+	def forward(self, X):
+
+		"""
+		Calculates the likelihood. 
+		:param X: n x p length numpy array of hidden states.
+		"""
+
+		# Torch-ify
+		X = torch.tensor(X).detach().float()
+
+		# Emission likelihoods
+		sigmoids = torch.sigmoid(X)
+		mask = torch.tensor(self.y == 1).byte()
+		l_emission = torch.log(sigmoids[:, mask]).sum(dim=1)
+		l_emission += torch.log((1-sigmoids[:, ~mask])).sum(dim=1)
+
+		# Initial likelihood 
+		norm_rv = ds.normal.Normal(loc=self.mu, scale=self.sigma)
+		l_init = norm_rv.log_prob(X[:, 0])
+
+		# Transition likelihoods based on AR1 likelihood
+		rhos = torch.sigmoid(self.rho_logit)
+		ordered_rhos = rhos[torch.tensor(self.transition_types).long()]
+		ordered_conjugates = torch.sqrt(1 - ordered_rhos**2)
+		differences = X[:, 1:] - ordered_conjugates * X[:, :-1]
+		l_transition = norm_rv.log_prob(differences / ordered_rhos).sum(dim=1)
+
+		return l_emission + l_init + l_transition
+
