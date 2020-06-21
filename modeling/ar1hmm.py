@@ -2,6 +2,16 @@ import torch
 import numpy as np
 from scipy import stats
 
+def Check_Shapes(y, transition_type):
+	p = y.shape[0]
+	p_trans = transition_type.shape[0]
+	if p_trans != p - 1:
+		raise ValueError(
+			f"Transition types dim 0 {p_trans} should be one less than emission dim 0 {p}"
+		)
+
+
+
 def AR1_log_likelihood(
 	X,
 	y,
@@ -12,9 +22,9 @@ def AR1_log_likelihood(
 ):
 	"""
 	Calculates the likelihood. 
-	:param X: n length numpy array of hidden states.
-	:param y: n length binary numpy array of emissions
-	:param transition_types: n - 1 length array of transition 
+	:param X: p length numpy array of hidden states.
+	:param y: p length binary numpy array of emissions
+	:param transition_types: p - 1 length array of transition 
 	types. Its unique values should be k successive integers,
 	zero-indexed.
 	:param rhos: A k-length array of correlation constants
@@ -24,17 +34,12 @@ def AR1_log_likelihood(
 	"""
 
 	# Make sure dimensions are correct
-	n = X.shape[0]
-	if n != y.shape[0]:
+	p = X.shape[0]
+	if p != y.shape[0]:
 		raise ValueError(
 			f"Hidden states shape {X.shape} should equal emisson shape {y.shape}"
 		)
-	n_trans = transition_types.shape[0]
-	if n_trans != n - 1:
-		raise ValueError(
-			f"Transition types shape {n_trans} should be one less than hidden shape {X.shape}"
-		)
-
+	Check_Shapes(y, transition_types)
 
 	# Emission likelihoods
 	sigmoids = np.exp(X) / (1 + np.exp(X))
@@ -66,4 +71,11 @@ class EM_Optimizer():
 		types. Its unique values should be k successive integers,
 		zero-indexed.
 		"""
-		pass
+
+		# Check transition type shape
+		Check_Shapes(y, transition_types)
+	
+		# Save
+		self.p = y.shape[0]
+		self.y = y
+		self.transition_types = transition_types
