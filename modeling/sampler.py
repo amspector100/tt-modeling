@@ -1,62 +1,87 @@
 import numpy as np
 from tqdm import *
-import random, sys
-from functools import reduce
-from operator import mul
 
-from util import *
-from processing import *
+from .util import *
+from .processing import *
 
-# This may not scale to lots more points but is working for now
-sys.setrecursionlimit(10000)
 
-def neighbor_builder(hmm_length):
-    def neighbors(node):
-        if node > 0 and node < hmm_length-1: return (node-1,node+1)
-        if node > 0: return (node-1,)
-        return (node+1,)
-    return neighbors
-
-def hmm_sampler(node_potentials, edge_potentials):
+def compute_fwd_messages(node_potentials, edge_potentials):
     # Make sure shapes, are, like, reasonable
+    assert(node_potentials.shape[0] == edge_potentials.shape[0]+1)
     assert(node_potentials.shape[1] == edge_potentials.shape[1])
     assert(edge_potentials.shape[1] == edge_potentials.shape[2])
 
-    # Don't damage them, please
+    # Figure out possible IDs and states
+    ids = np.arange(node_potentials.shape[0])
+    states = np.arange(node_potentials.shape[1])
+
+    # Messages has following shape:
+    # Dim 0 -- nodes in hmm
+    # Dim 1 -- bins
+    messages = np.empty((ids.shape[0]-1,)+states.shape, dtype=np.float32)
+    for value_end in states:
+        mul_arr = np.concatenate((node_potentials[0], edge_potentials[0,:,value_end]), axis=-1)
+        messages[0][value_end] = np.sum(np.prod(mul_arr, axis=0))
+    for e in ids[1:-1]:
+        for value_end in states:
+            mul_arr = np.concatenate((node_potentials[e], edge_potentials[e,:,value_end], messages[e-1]), axis=-1)
+            messages[e][value_end] = np.sum(np.prod(mul_arr, axis=0))
+    return messages
+
+def compute_bkw_messages(node_potentials, edge_potentials):
+    # Make sure shapes, are, like, reasonable
+    assert(node_potentials.shape[0] == edge_potentials.shape[0]+1)
+    assert(node_potentials.shape[1] == edge_potentials.shape[1])
+    assert(edge_potentials.shape[1] == edge_potentials.shape[2])
+
+    # Figure out possible IDs and states
+    ids = np.arange(node_potentials.shape[0])
+    states = np.arange(node_potentials.shape[1])
+
+    # Messages has following shape:
+    # Dim 0 -- nodes in hmm
+    # Dim 1 -- bins
+    messages = np.empty((ids.shape[0]-1,)+states.shape, dtype=np.float32)
+    for value_end in states:
+        mul_arr = np.concatenate((node_potentials[-1], edge_potentials[-2,value_end,:]), axis=-1)
+        messages[0][value_end] = np.sum(np.prod(mul_arr, axis=0))
+    for i, e in enumerate(ids[-2:0:-1]):
+        for value_end in states:
+            mul_arr = np.concatenate((node_potentials[e], edge_potentials[e-1,value_end,:], messages[i]), axis=-1)
+            messages[i+1][value_end] = np.sum(np.prod(mul_arr, axis=0))
+    return messages
+
+def compute_marginals(node_potentials, edge_potentials):
+    fwd_message = compute_fwd_messages(node_potentials, edge_potentials)
+    bkw_message = compute_bkw_messages(node_potentials, edge_potentials)
+    marginals = np.zeros_like(node_potentials)
+    marginals[0] = bkw_message[-1]*node_potentials[0]
+    for i in range(1,node_potentials.shape[0]-1):
+        marginals[i] = fwd_message[i-1]*node_potentials[i]*bkw_message[-i-1]
+    marginals[-1] = fwd_message[-1]*node_potentials[-1]
+    return marginals / marginals.sum(axis=-1)
+
+
+def sample_hmm(node_potentials, edge_potentials, bkw_messages):
+
+    # Don't damage these, please
     node_potentials = node_potentials.copy()
 
     # Figure out possible IDs and states
     ids = np.arange(node_potentials.shape[0])
     states = np.arange(node_potentials.shape[1])
 
-    neighbors = neighbor_builder(node_potentials.shape[0])
-
-    get_edge_potential = lambda s, e, v_s, v_e: edge_potentials[s,v_s,v_e] if s < e else edge_potentials[e,v_e,v_s]
-
-    messages = np.zeros(ids.shape+(2,)+states.shape, dtype=np.float32)-1
-
-    # Recursively compute messages
-    def compute_message(start, end, end_value):
-        if messages[start][end][end_value] != -1.: return messages[start][end][end_value]
-        # Now we're going to compute ALL of the messages, since it makes normalization easier.
-        s_sum = 0
+    # Go up the tree!
+    config = np.empty_like(ids)
+    marginals = bkw_messages[-1]*node_potentials[0]
+    config[0] = np.random.choice(states, p=marginals)
+    fwd_message, last_fwd_message = np.empty_like(states), np.ones_like(states)
+    for e in ids[1:]:
+        # Compute forward messages, using wraparound trick to avoid annoyingness
         for value_end in states:
-            messages[start][end][value_end] = sum(
-                reduce(mul, [node_potentials[start][value_i], get_edge_potential(start,end,value_i,value_end)]+[
-                    compute_message(neighbor, start, value_i)
-                    for neighbor in neighbors(start) if neighbor != end
-                ]) for value_i in states
-            )
-            s_sum += messages[start][end][value_end]
-        messages[start][end] /= s_sum
-        return messages[start][end][end_value]
-    # To avoid ridiculous recursion depth, run the backward pass first in a loop to precompute everything
-    for e in reversed(ids[:-1]):
-        for v in states:
-            compute_message(e+1,e,v)
-    # Go up  the tree!
-    config = np.zeros_like(ids)
-    for e in ids:
+            mul_arr = np.concatenate((node_potentials[e-1], edge_potentials[e-1,:,value_end], last_fwd_message), axis=-1)
+            fwd_message[value_end] = np.sum(np.prod(mul_arr, axis=0))
+            last_fwd_message = fwd_message.copy()
         # Get (conditional) marginals
         marginals = np.array([
             reduce(mul, [node_potentials[e][v_i]]+[compute_message(neighbor, e, v_i) for neighbor in neighbors(e)])
