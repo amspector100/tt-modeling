@@ -33,10 +33,7 @@ def hmm_sampler(node_potentials, edge_potentials):
 
     get_edge_potential = lambda s, e, v_s, v_e: edge_potentials[s,v_s,v_e] if s < e else edge_potentials[e,v_e,v_s]
 
-    messages = {
-        node: { neighbor: np.full_like(states, -1., dtype=np.float32) for neighbor in neighbors(node) }
-        for node in ids
-    }
+    messages = np.zeros(ids.shape+(2,)+states.shape, dtype=np.float32)-1
 
     # Recursively compute messages
     def compute_message(start, end, end_value):
