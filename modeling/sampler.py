@@ -64,34 +64,24 @@ def compute_marginals(node_potentials, edge_potentials):
 
 def sample_hmm(node_potentials, edge_potentials, bkw_messages):
 
-    # Don't damage these, please
-    node_potentials = node_potentials.copy()
-
     # Figure out possible IDs and states
     ids = np.arange(node_potentials.shape[0])
     states = np.arange(node_potentials.shape[1])
 
     # Go up the tree!
     config = np.empty_like(ids)
-    marginals = bkw_messages[-1]*node_potentials[0]
-    config[0] = np.random.choice(states, p=marginals)
-    fwd_message, last_fwd_message = np.empty_like(states), np.ones_like(states)
-    for e in ids[1:]:
-        # Compute forward messages, using wraparound trick to avoid annoyingness
-        for value_end in states:
-            mul_arr = np.concatenate((node_potentials[e-1], edge_potentials[e-1,:,value_end], last_fwd_message), axis=-1)
-            fwd_message[value_end] = np.sum(np.prod(mul_arr, axis=0))
-            last_fwd_message = fwd_message.copy()
+    # 0 be its own case
+    marginals = node_potentials[0]*bkw_messages[-1]
+    config[0] = np.random.choice(states, p=marginals/marginals.sum())
+    for e in ids[1:-1]:
         # Get (conditional) marginals
-        marginals = np.array([
-            reduce(mul, [node_potentials[e][v_i]]+[compute_message(neighbor, e, v_i) for neighbor in neighbors(e)])
-            for v_i in states
-        ])
-        marginals /= np.sum(marginals)
+        marginals = edge_potentials[e-1,config[e-1],:]*node_potentials[e]*bkw_messages[-e-1]
         # Sample from the (conditional) marginal
-        config[e] = np.random.choice(states, p=marginals)
-        node_potentials[e] = np.zeros_like(states)
-        node_potentials[e][config[e]] = 1
+        config[e] = np.random.choice(states, p=marginals/marginals.sum())
+    # -1 be its own case
+    marginals = edge_potentials[-1,config[-2],:]*node_potentials[-1] # The first -1 *is* right because edge_potentials is shorter.
+    config[-1] = np.random.choice(states, p=marginals/marginals.sum())
+
     return config
 
 def sample_conditional(df, bins, ro, mu, sigma, n_sample=1, verbose=False):
@@ -100,10 +90,11 @@ def sample_conditional(df, bins, ro, mu, sigma, n_sample=1, verbose=False):
         generate_transition_matrix(bins, ro, mu, sigma).reshape((1,bins.shape[0],bins.shape[0])),
         len(df)-1, axis=0
     )
+    bkw_messages = compute_bkw_messages(node_potentials, edge_potentials)
     sample = []
     loop = trange(n_sample) if verbose else range(n_sample)
     for i in loop:
-        sample.append(bins[hmm_sampler(node_potentials, edge_potentials)])
+        sample.append(bins[sample_hmm(node_potentials, edge_potentials, bkw_messages)])
     return np.array(sample) if n_sample > 1 else sample[0]
 
 if __name__ == '__main__':
