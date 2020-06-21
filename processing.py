@@ -23,6 +23,7 @@ def read_single_file(path):
 
 	# Process points, time, add game start time
 	df['point'] = df['point'].str.contains('a').astype(int)
+	# TODO -- Deal with too-short-deltas (multiple updates.)
 	df['time'] = df['time'].astype(float)
 
 	df['gametime'] = int(path.split('.csv')[0].split('/')[-1])
@@ -35,6 +36,7 @@ def read_single_file(path):
 	df['point_num'] = np.arange(0, df.shape[0], 1)
 	df = df.set_index('point_num')
 	df['server'] = (first_server + df.index // alternation) % alternation
+
 
 	# Adjust serving information to account for games which go to 
 	# over 21, where we alternate serves.
@@ -49,16 +51,24 @@ def read_single_file(path):
 
 	return df
 
-def process_data():
+def process_data(data_folder='data'):
 
 	# Read and process all the data
-	filenames = glob.glob('data/*.csv')
+	filenames = glob.glob(data_folder+'/*.csv')
 	all_data = []
 	for i, filename in enumerate(sorted(filenames)):
 		df = read_single_file(filename)
-		df['game_no'] = i
+		df['game_num'] = i
 		all_data.append(df)
 	all_data = pd.concat(all_data, axis='index')
+
+	# Reset index to prevent collisions
+	all_data = all_data.reset_index()
+	
+	# 0=new point, 1=new game, 2=new day
+	all_data['point_type'] = (all_data['game_num'].diff() > 0).astype(int)
+	all_data['point_type'] += ((all_data['gametime'] // 86400).diff() > 0).astype(int)
+	all_data.loc[0,'point_type'] = 2
 	
 	# TODO: we could cache all of the stuff we have currently read
 	# and only read new stuff for the future.
@@ -67,4 +77,6 @@ def process_data():
 
 if __name__ == '__main__':
 
-	print(process_data())
+	df = process_data()
+	print(len(df))
+	print(df['point_type'])
