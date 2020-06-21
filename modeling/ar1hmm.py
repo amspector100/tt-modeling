@@ -90,7 +90,7 @@ class TorchLogLikelihood(torch.nn.Module):
 
 		# Because we constrain rhos in [0,1], 
 		# we store log(rho) as a the variable we optimize
-		self.rho_logit = torch.nn.Parameter(torch.randn(num_rhos))
+		self.rho_logit = torch.nn.Parameter(torch.zeros(num_rhos))
 
 	def get_params(self):
 		""" Returns parameters, convenience function """
@@ -155,6 +155,8 @@ class EMOptimizer():
 		)
 
 		# Gradient-based optimizer for M step
+		if 'lr' not in kwargs:
+			kwargs['lr'] = 0.01
 		self.opt = torch.optim.Adam(
 			self.model.parameters(),
 			**kwargs
