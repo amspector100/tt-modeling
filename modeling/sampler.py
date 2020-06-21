@@ -44,14 +44,10 @@ def compute_bkw_messages(node_potentials, edge_potentials):
     # Dim 0 -- nodes in hmm
     # Dim 1 -- bins
     messages = np.empty((ids.shape[0]-1,)+states.shape, dtype=np.float32)
-    print(node_potentials[-1])
-    print(edge_potentials[-2])
     for value_end in states:
         messages[0][value_end] = np.einsum('i,i->', node_potentials[-1], edge_potentials[-2,value_end,:])
-    print(messages[0])
     messages[0] /= messages[0].sum()
     for i, e in enumerate(ids[-2:0:-1]):
-        print(node_potentials[e])
         for value_end in states:
             messages[i+1][value_end] = np.einsum('i,i,i->', node_potentials[e], edge_potentials[e-1,value_end,:], messages[i])
         messages[i+1] /= messages[i+1].sum()
