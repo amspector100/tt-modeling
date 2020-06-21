@@ -61,7 +61,7 @@ def AR1_log_likelihood(
 
 	return l_emission + l_init + l_transition
 
-class EMOptimizer(torch.nn.Module):
+class TorchLogLikelihood(torch.nn.Module):
 
 	def __init__(
 		self,
@@ -76,8 +76,6 @@ class EMOptimizer(torch.nn.Module):
 		"""
 		super().__init__()
 
-		# Check transition type shape
-		Check_Shapes(y, transition_types)
 	
 		# Save observed data
 		self.p = y.shape[0]
@@ -93,10 +91,6 @@ class EMOptimizer(torch.nn.Module):
 		# Because we constrain rhos in [0,1], 
 		# we store log(rho) as a the variable we optimize
 		self.rho_logit = torch.nn.Parameter(torch.randn(num_rhos))
-
-		# Will be n x p dimensional array of samples from hidden state
-		# This will be helpful for EM algorithm
-		self.X = None 
 
 	def get_params(self):
 		""" Returns parameters, convenience function """
@@ -131,4 +125,106 @@ class EMOptimizer(torch.nn.Module):
 		l_transition = norm_rv.log_prob(differences / ordered_rhos).sum(dim=1)
 
 		return l_emission + l_init + l_transition
+
+class EMOptimizer():
+
+	def __init__(
+		self,
+		y,
+		transition_types,
+		df=None,
+		**kwargs
+	):
+		"""
+		:param y: n length binary numpy array of emissions
+		:param transition_types: n - 1 length array of transition 
+		types. Its unique values should be k successive integers,
+		zero-indexed.
+		"""
+
+		# Check transition type shape
+		Check_Shapes(y, transition_types)
+
+		# Initialize log-likelihood module and save data
+		self.p = y.shape[0]
+		self.y = y
+		self.transition_types = transition_types
+		self.model = TorchLogLikelihood(
+			y=y,
+			transition_types=transition_types,
+		)
+
+		# Gradient-based optimizer for M step
+		self.opt = torch.optim.Adam(
+			self.model.parameters(),
+			**kwargs
+		)
+
+	def get_params(self):
+		"""
+		Helper function to pull numpy-ified parameters.
+		returns: mu, sigma, rhos
+		"""
+		mu, sigma, rhos = self.model.get_params()
+		mu = mu.item()
+		sigma = sigma.item()
+		rhos = rhos.detach().numpy()
+		return mu, sigma, rhos
+
+	def E_step(self, n_samples=1000):
+		"""
+		Samples from P(X|y, mu, sigma, rhos) 
+		returns: n x p array X
+		"""
+		mu, sigma, rhos = self.get_params()
+		return None
+
+	def M_step(self, X, num_iter=50, mstep=0):
+		"""
+		:param X: n x p array of hidden states
+		(n = number of samples, p = length of chain)
+		returns: mu, sigma, rhos
+		"""
+		for j in range(num_iter):
+
+			# Step 1: Calculate loss
+			qloss = -1*self.model(X).sum()
+
+			# Step 2: Step along gradient
+			self.opt.zero_grad()
+			qloss.backward()
+			self.opt.step()
+
+			# Step 3: Log output
+			if j % 5 == 0:
+				print(f"At M step {mstep}, iter {j}, qloss is {-1*qloss.item()}")
+
+		return -1*qloss
+
+	def train(self, num_iter=10, num_M_iter=50, n_samples=1000):
+		"""
+		returns: mu, sigma, rhos, X, and marginals 
+		"""
+
+		# Iterate
+		for i in range(num_iter):
+
+			# E step
+			X = self.E_step(n_samples=n_samples)
+
+			# M step
+			self.M_step(X=X, num_iter=num_M_iter, mstep=i)
+
+		# Extract parameters
+		mu, sigma, rhos = self.get_params()
+		# Get marginals
+		return mu, sigma, rhos, marginals
+
+
+
+
+
+
+
+
 

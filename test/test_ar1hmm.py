@@ -44,22 +44,20 @@ class TestAR1HMM(unittest.TestCase):
 
 	def test_ar1hmm_class(self):
 
-		# Dimensionality
+		# Fake data
 		np.random.seed(123456)
 		n = 100
 		p = 10
-
-		# Fake data
 		X = np.random.randn(n, p)
 		y = np.random.binomial(1, 0.1, (p,))
 		transition_types = np.random.binomial(1, 0.3, (p-1,))
 
 		# Initialize and calc loglike
-		emopt = ar1hmm.EMOptimizer(y=y, transition_types=transition_types)
-		loglike = emopt(X)[0].item()
+		torch_ll = ar1hmm.TorchLogLikelihood(y=y, transition_types=transition_types)
+		loglike = torch_ll(X)[0].item()
 
 		# Extract parameters 
-		mu, sigma, rhos = emopt.get_params()
+		mu, sigma, rhos = torch_ll.get_params()
 		mu = mu.item()
 		sigma = sigma.item()
 		rhos = rhos.detach().numpy()
@@ -77,6 +75,28 @@ class TestAR1HMM(unittest.TestCase):
 			abs(loglike-loglike_numpy) < 0.1,
 			f"Numpy ({loglike_numpy}) and torch (({loglike}) log likelihoods disagree"
 		)
+
+	def test_M_step(self):
+
+		# Fake data
+		np.random.seed(123456)
+		n = 100
+		p = 10
+		X = np.random.randn(n, p)
+		y = np.random.binomial(1, 0.1, (p,))
+		transition_types = np.random.binomial(1, 0.3, (p-1,))
+
+		# Class init and initial log-likelihood
+		emopt = ar1hmm.EMOptimizer(y=y, transition_types=transition_types)
+		init_ll = emopt.model(X).sum().item()
+
+		# M_step
+		qloss = emopt.M_step(X, num_iter=50)
+		self.assertTrue(
+			init_ll < qloss,
+			f"M step fails to increase likelihood: initial likelihood is {init_ll}, ending is {qloss}"
+		)
+
 
 if __name__ == '__main__':
 	unittest.main()
