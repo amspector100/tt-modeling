@@ -173,7 +173,7 @@ class EMOptimizer():
 		rhos = rhos.detach().numpy()
 		return mu, sigma, rhos
 
-	def E_step(self, n_samples=1000):
+	def E_step(self, n_sample=1000):
 		"""
 		Samples from P(X|y, mu, sigma, rhos) 
 		returns: n x p array X
@@ -203,7 +203,7 @@ class EMOptimizer():
 
 		return -1*qloss
 
-	def train(self, num_iter=10, num_M_iter=50, n_samples=1000):
+	def train(self, num_iter=10, num_M_iter=50, n_sample=1000):
 		"""
 		returns: mu, sigma, rhos, X, and marginals 
 		"""
@@ -212,7 +212,7 @@ class EMOptimizer():
 		for i in range(num_iter):
 
 			# E step
-			X = self.E_step(n_samples=n_samples)
+			X = self.E_step(n_sample=n_sample)
 
 			# M step
 			self.M_step(X=X, num_iter=num_M_iter, mstep=i)
