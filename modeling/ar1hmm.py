@@ -1,3 +1,4 @@
+import time
 import numpy as np
 from scipy import stats
 
@@ -86,12 +87,13 @@ class TorchLogLikelihood(torch.nn.Module):
 
 		# Initialize parameters
 		self.mu = torch.nn.Parameter(torch.tensor(0).float())
-		self.sigma = torch.nn.Parameter(torch.tensor(1).float())
+		self.sigma = torch.nn.Parameter(torch.tensor(0.2).float())
 		num_rhos = np.unique(self.transition_types).shape[0]
 
 		# Because we constrain rhos in [0,1], 
 		# we store log(rho) as a the variable we optimize
-		self.rho_logit = torch.nn.Parameter(torch.zeros(num_rhos))
+		init_rho_logit = torch.zeros(num_rhos) - 1
+		self.rho_logit = torch.nn.Parameter(init_rho_logit)
 
 	def get_params(self):
 		""" Returns parameters, convenience function """
@@ -134,6 +136,8 @@ class EMOptimizer():
 		df=None,
 		y=None,
 		transition_types=None,
+		binsize=0.1,
+		max_bin=2.5,
 		**kwargs
 	):
 		"""
@@ -141,12 +145,16 @@ class EMOptimizer():
 		:param transition_types: n - 1 length array of transition 
 		types. Its unique values should be k successive integers,
 		zero-indexed.
+		:param binsize: Size of bins
+		:param max_bin: Largest bin value. Defaults to 2.5.
+		:param **kwargs: kwargs for adam optimizer.
 		"""
 
+		# Extract np-ified data
 		if df is not None:
 			y = df['point'].values
-			print(y)
-			transition_types = df['point_type'][1:].astype(int).values
+			transition_types = df['point_type'].values
+			transition_types = transition_types[1:].astype(int)
 
 		# Check transition type shape
 		Check_Shapes(y, transition_types)
@@ -168,6 +176,14 @@ class EMOptimizer():
 			**kwargs
 		)
 
+		# Bins
+		self.bins = np.arange(
+			-1*max_bin, max_bin + binsize, binsize
+		)
+
+		# Save q losses for later caching
+		self.qlosses = []
+
 	def get_params(self):
 		"""
 		Helper function to pull numpy-ified parameters.
@@ -179,13 +195,24 @@ class EMOptimizer():
 		rhos = rhos.detach().numpy()
 		return mu, sigma, rhos
 
-	def E_step(self, n_sample=1000):
+	def E_step(self, n_sample=1000, verbose=True):
 		"""
 		Samples from P(X|y, mu, sigma, rhos) 
-		returns: n x p array X
+		returns: n x p array X of bucketized normal
+		values.
 		"""
 		mu, sigma, rhos = self.get_params()
-		return None
+		X = sampler.sample_conditional(
+			y=self.y,
+			transition_types=self.transition_types,
+			bins=self.bins,
+			mu=mu,
+			sigma=sigma,
+			rhos=rhos,
+			n_sample=n_sample,
+			verbose=verbose,
+		)
+		return X
 
 	def M_step(self, X, num_iter=50, mstep=0, verbose=True):
 		"""
@@ -209,24 +236,57 @@ class EMOptimizer():
 
 		return -1*qloss
 
-	def train(self, num_iter=10, num_M_iter=50, n_sample=1000):
+	def train(
+		self,
+		num_iter=10,
+		num_M_iter=50,
+		n_sample=1000,
+		verbose=1
+	):
 		"""
-		returns: mu, sigma, rhos, X, and marginals 
+		:param verbose: If 0, logs nothing. If 1, logs completions
+		of EM steps. If > 1, then the M and E steps will be verbose as well.
+		returns: mu, sigma, rhos, marginals 
 		"""
 
 		# Iterate
+		print("Running the EM algorithm... \n")
+		time0 = time.time()
 		for i in range(num_iter):
 
 			# E step
-			X = self.E_step(n_sample=n_sample)
+			X = self.E_step(
+				n_sample=n_sample,
+				verbose=verbose > 1
+			)
 
 			# M step
-			self.M_step(X=X, num_iter=num_M_iter, mstep=i)
+			qloss = self.M_step(
+				X=X,
+				num_iter=num_M_iter,
+				mstep=i,
+				verbose=verbose > 1
+			) 
+
+			# Cache for testing / analysis
+			self.qlosses.append(qloss)
+
+			if verbose > 0:
+				print(f"EM iteration {i} has qloss {qloss} at time {time.time() - time0}")
 
 		# Extract parameters
+		print("Finished with EM algorith... extracting marginals!")
 		mu, sigma, rhos = self.get_params()
-		# Get marginals
-		return mu, sigma, rhos, marginals
+		self.marginals = sampler.compute_marginals(
+			y=self.y, 
+			transition_types=self.transition_types,
+			bins=self.bins,
+			mu=mu,
+			sigma=sigma,
+			rhos=rhos,
+		)
+		# Return
+		return mu, sigma, rhos, self.marginals
 
 
 

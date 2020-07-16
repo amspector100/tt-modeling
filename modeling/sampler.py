@@ -154,7 +154,6 @@ def fetch_potentials(y, transition_types, bins, mu, sigma, rhos):
     return node_potentials, edge_potentials
 
 
-
 def sample_conditional(
         y, 
         transition_types,

@@ -96,13 +96,29 @@ class TestAR1HMM(unittest.TestCase):
 			init_ll < qloss,
 			f"M step fails to increase likelihood: initial likelihood is {init_ll}, ending is {qloss}"
 		)
+	
+	def test_EM(self):
 
-	def test_real_data(self):
+		# Fake data
+		np.random.seed(123456)
+		p = 3000
+		X = 0.3*np.random.randn(p) + 0.06
+		y = np.random.binomial(1, 1/(1+np.exp(-1*X)), (p,))
+		transition_types = np.random.binomial(1, 0.3, (p-1,))
 
-		df = modeling.processing.process_data()
-		emopt = ar1hmm.EMOptimizer(df=df)
-		print(emopt)
-		raise ValueError()
+		# Class init and initial log-likelihood
+		emopt = ar1hmm.EMOptimizer(
+			y=y,
+			transition_types=transition_types
+		)
+		emopt.train(num_iter=2, n_sample=100, verbose=1)
+		
+		# Makes sure loss is decreasing
+		qlosses = emopt.qlosses
+		self.assertTrue(
+			qlosses[0] < qlosses[-1],
+			f"Initial qloss {qlosses[0]} is >= final qloss {qlosses[-1]}"
+		)
 
 if __name__ == '__main__':
 	unittest.main()
