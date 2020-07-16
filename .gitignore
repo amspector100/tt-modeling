@@ -3,7 +3,6 @@
 
 # No data
 data/*
-processed/*
 
 # No .Rout files
 *.Rout
